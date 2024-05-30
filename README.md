@@ -26,7 +26,7 @@ hyprpm add https://github.com/pyt0xic/hyprfocus
 to start using hyprfocus, add this to your hyprland config:
 
 ```
-    hyprfocus {
+    plugin:hyprfocus {
         enabled = yes
         animate_floating = yes
         animate_workspacechange = yes
