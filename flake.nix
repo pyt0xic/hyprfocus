@@ -11,7 +11,7 @@
     {
       packages = forHyprlandSystems
         (system: pkgs: rec {
-          hyprfocus = pkgs.gcc13Stdenv.mkDerivation {
+          hyprfocus = hyprland.packages.${system}.hyprland.stdenv.mkDerivation {
             pname = "hyprfocus";
             version = "0.1";
             src = nix-filter.lib {
