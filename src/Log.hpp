@@ -1,10 +1,14 @@
 #pragma once
 #define WLR_USE_UNSTABLE
-#include <hyprland/src/debug/Log.hpp>
+#include <hyprland/src/debug/log/Logger.hpp>
+
+// Compatibility constants for log levels
+constexpr auto LOG = Log::DEBUG;
+constexpr auto ERR = Log::ERR;
 
 template <typename... Args>
-void hyprfocus_log(eLogLevel level, std::format_string<Args...> fmt,
+void hyprfocus_log(Hyprutils::CLI::eLogLevel level, std::format_string<Args...> fmt,
                    Args &&...args) {
   auto msg = std::vformat(fmt.get(), std::make_format_args(args...));
-  Debug::log(level, "[hyprfocus] {}", msg);
+  Log::logger->log(level, "[hyprfocus] {}", msg);
 }

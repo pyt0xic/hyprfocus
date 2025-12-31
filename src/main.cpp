@@ -5,10 +5,8 @@
 #include "Globals.hpp"
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
-#include <hyprland/src/debug/Log.hpp>
-
 #include <hyprland/src/Compositor.hpp>
-#include <hyprland/src/desktop/Window.hpp>
+#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/managers/animation/AnimationManager.hpp>
 
 #include "Flash.hpp"
