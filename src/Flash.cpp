@@ -2,7 +2,7 @@
 #include "Globals.hpp"
 
 #include <hyprland/src/Compositor.hpp>
-#include <hyprland/src/desktop/Window.hpp>
+#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/managers/animation/AnimationManager.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
@@ -17,17 +17,17 @@ void CFlash::setup(HANDLE pHandle, std::string animationName) {
   //     (Hyprlang::FLOAT *const *)(getConfigValue(pHandle, "flash_opacity")
   //                                    ->getDataStaticPtr());
   // g_fFlashOpacity = **flash_opacity;
-  // hyprfocus_log(LOG, "Flash opacity: {}", g_fFlashOpacity);
+  // hyprfocus_log(Log::INFO, "Flash opacity: {}", g_fFlashOpacity);
   // static const auto *active_opacity =
   //     (Hyprlang::FLOAT *const *)(HyprlandAPI::getConfigValue(
   //                                    pHandle, "decoration:active_opacity")
   //                                    ->getDataStaticPtr());
   // g_fActiveOpacity = **active_opacity;
-  // hyprfocus_log(LOG, "Active opacity: {}", g_fActiveOpacity);
+  // hyprfocus_log(Log::INFO, "Active opacity: {}", g_fActiveOpacity);
 }
 
 void CFlash::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
-  hyprfocus_log(LOG, "Flash onWindowFocus start");
+  hyprfocus_log(Log::INFO, "Flash onWindowFocus start");
   IFocusAnimation::onWindowFocus(pWindow, pHandle);
 
   static const auto *flash_opacity =
