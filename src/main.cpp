@@ -8,6 +8,8 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/managers/animation/AnimationManager.hpp>
+#include <hyprland/src/event/EventBus.hpp>
+#include <hyprland/src/desktop/DesktopTypes.hpp>
 
 #include "Flash.hpp"
 #include "Shrink.hpp"
@@ -92,10 +94,9 @@ SDispatchResult flashCurrentWindow(std::string) {
   return result;
 }
 
-static void onActiveWindowChange(void *self, std::any data) {
+static void onActiveWindowChange(PHLWINDOW PWINDOW, Desktop::eFocusReason reason) {
   try {
     hyprfocus_log(LOG, "Active window changed");
-    auto const PWINDOW = std::any_cast<PHLWINDOW>(data);
     static auto *const PHYPRFOCUSENABLED =
         (Hyprlang::INT *const *)HyprlandAPI::getConfigValue(
             PHANDLE, "plugin:hyprfocus:enabled")
@@ -142,23 +143,16 @@ static void onActiveWindowChange(void *self, std::any data) {
     flashWindow(PWINDOW);
     g_pPreviouslyFocusedWindow = PWINDOW;
 
-  } catch (std::bad_any_cast &e) {
-    hyprfocus_log(ERR, "Cast Error: {}", e.what());
   } catch (std::exception &e) {
     hyprfocus_log(ERR, "Error: {}", e.what());
   }
 }
 
-static void onMouseButton(void *self, std::any data) {
+static void onMouseButton(IPointer::SButtonEvent e, Event::SCallbackInfo& info) {
   try {
-    auto const PWLRMOUSEBUTTONEVENT =
-        std::any_cast<IPointer::SButtonEvent>(data);
-    hyprfocus_log(LOG, "Mouse button state: {}",
-                  (int)PWLRMOUSEBUTTONEVENT.state);
-    g_bMouseWasPressed = (int)PWLRMOUSEBUTTONEVENT.state == 1;
+    hyprfocus_log(LOG, "Mouse button state: {}", (int)e.state);
+    g_bMouseWasPressed = (int)e.state == 1;
 
-  } catch (std::bad_any_cast &e) {
-    hyprfocus_log(ERR, "Cast Error: {}", e.what());
   } catch (std::exception &e) {
     hyprfocus_log(ERR, "Error: {}", e.what());
   }
@@ -194,19 +188,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
   g_pAnimationManager->tick();
   hyprfocus_log(LOG, "Reloaded config");
 
-  // Register callbacks
-  static auto P1 = HyprlandAPI::registerCallbackDynamic(
-      PHANDLE, "activeWindow",
-      [&](void *self, SCallbackInfo &info, std::any data) {
-        onActiveWindowChange(self, data);
-      });
+  // Register callbacks using new Event Bus API
+  static auto P1 = Event::bus()->m_events.window.active.listen(onActiveWindowChange);
   hyprfocus_log(LOG, "Registered active window change callback");
 
-  static auto P2 = HyprlandAPI::registerCallbackDynamic(
-      PHANDLE, "mouseButton",
-      [&](void *self, SCallbackInfo &info, std::any data) {
-        onMouseButton(self, data);
-      });
+  static auto P2 = Event::bus()->m_events.input.mouse.button.listen(onMouseButton);
   hyprfocus_log(LOG, "Registered mouse button callback");
 
   HyprlandAPI::reloadConfig();
