@@ -6,6 +6,8 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
 #include <hyprland/src/Compositor.hpp>
+#include <hyprland/src/config/values/types/IntValue.hpp>
+#include <hyprland/src/config/values/types/StringValue.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/managers/animation/AnimationManager.hpp>
 #include <hyprland/src/event/EventBus.hpp>
@@ -20,6 +22,20 @@ bool g_bWorkspaceChanged = false;
 
 std::unordered_map<std::string, std::unique_ptr<IFocusAnimation>> g_mAnimations;
 
+// V2 plugin config values. Kept as globals so we can read them at any time.
+static SP<Config::Values::CIntValue>    g_pEnabled;
+static SP<Config::Values::CIntValue>    g_pAnimateWorkspaceChange;
+static SP<Config::Values::CIntValue>    g_pAnimateFloating;
+static SP<Config::Values::CStringValue> g_pFocusAnimation;
+
+// Lifetime backing for the const char* name fields.
+static std::vector<std::string> g_configNames;
+
+static const char *keepName(const std::string &s) {
+  g_configNames.emplace_back(s);
+  return g_configNames.back().c_str();
+}
+
 static bool OnSameWorkspace(PHLWINDOW pWindow1, PHLWINDOW pWindow2) {
   if (pWindow1 == pWindow2) {
     return true;
@@ -33,48 +49,25 @@ static bool OnSameWorkspace(PHLWINDOW pWindow1, PHLWINDOW pWindow2) {
 }
 
 void flashWindow(PHLWINDOW pWindow) {
-  // static const Hyprlang::STRING *focusAnimation = nullptr;
-  // if (g_bMouseWasPressed == true) {
-  //   hyprfocus_log(LOG, "Mouse was pressed");
-  //   focusAnimation =
-  //       (Hyprlang::STRING const *)(HyprlandAPI::getConfigValue(
-  //                                      PHANDLE,
-  //                                      "plugin:hyprfocus:mouse_focus_animation")
-  //                                      ->getDataStaticPtr());
-  // } else {
-  //   focusAnimation =
-  //       (Hyprlang::STRING const
-  //            *)(HyprlandAPI::getConfigValue(
-  //                   PHANDLE, "plugin:hyprfocus:keyboard_focus_animation")
-  //                   ->getDataStaticPtr());
-  // }
-  static const Hyprlang::STRING *focusAnimation =
-      (Hyprlang::STRING const *)(HyprlandAPI::getConfigValue(
-                                     PHANDLE,
-                                     "plugin:hyprfocus:focus_animation")
-                                     ->getDataStaticPtr());
-  hyprfocus_log(LOG, "Flashing window");
-  hyprfocus_log(LOG, "Animation: {}", *focusAnimation);
+  if (!g_pFocusAnimation)
+    return;
+  const std::string focusAnimation = g_pFocusAnimation->value();
+  hyprfocus_log(LOG, "Flashing window with animation: {}", focusAnimation);
 
-  auto it = g_mAnimations.find(*focusAnimation);
+  auto it = g_mAnimations.find(focusAnimation);
   if (it != g_mAnimations.end()) {
-    hyprfocus_log(LOG, "Calling onWindowFocus for animation {}",
-                  *focusAnimation);
+    hyprfocus_log(LOG, "Calling onWindowFocus for animation {}", focusAnimation);
     it->second->onWindowFocus(pWindow, PHANDLE);
   }
 }
 
 SDispatchResult flashCurrentWindow(std::string) {
   hyprfocus_log(LOG, "Flashing current window");
-    SDispatchResult result = {
-        .passEvent = false,
-        .success = true,        
-    };
-  static auto *const PHYPRFOCUSENABLED =
-      (Hyprlang::INT *const *)HyprlandAPI::getConfigValue(
-          PHANDLE, "plugin:hyprfocus:enabled")
-          ->getDataStaticPtr();
-  if (!*PHYPRFOCUSENABLED) {
+  SDispatchResult result = {
+      .passEvent = false,
+      .success = true,
+  };
+  if (!g_pEnabled || !g_pEnabled->value()) {
     const std::string message = "HyprFocus is disabled";
     hyprfocus_log(LOG, "HyprFocus is disabled");
     result.success = false;
@@ -97,22 +90,13 @@ SDispatchResult flashCurrentWindow(std::string) {
 static void onActiveWindowChange(PHLWINDOW PWINDOW, Desktop::eFocusReason reason) {
   try {
     hyprfocus_log(LOG, "Active window changed");
-    static auto *const PHYPRFOCUSENABLED =
-        (Hyprlang::INT *const *)HyprlandAPI::getConfigValue(
-            PHANDLE, "plugin:hyprfocus:enabled")
-            ->getDataStaticPtr();
 
-    static auto *const PANIMATEFLOATING =
-        (Hyprlang::INT *const *)HyprlandAPI::getConfigValue(
-            PHANDLE, "plugin:hyprfocus:animate_floating")
-            ->getDataStaticPtr();
+    if (!g_pEnabled || !g_pAnimateFloating || !g_pAnimateWorkspaceChange) {
+      hyprfocus_log(ERR, "hyprfocus config values not registered");
+      return;
+    }
 
-    static auto *const PANIMATEWORKSPACECHANGE =
-        (Hyprlang::INT *const *)HyprlandAPI::getConfigValue(
-            PHANDLE, "plugin:hyprfocus:animate_workspacechange")
-            ->getDataStaticPtr();
-
-    if (!**PHYPRFOCUSENABLED) {
+    if (!g_pEnabled->value()) {
       hyprfocus_log(LOG, "HyprFocus is disabled");
       return;
     }
@@ -127,13 +111,13 @@ static void onActiveWindowChange(PHLWINDOW PWINDOW, Desktop::eFocusReason reason
       return;
     }
 
-    if (PWINDOW->m_isFloating && !**PANIMATEFLOATING) {
+    if (PWINDOW->m_isFloating && !g_pAnimateFloating->value()) {
       hyprfocus_log(LOG, "Floating window, not animating");
       g_pPreviouslyFocusedWindow = PWINDOW;
       return;
     }
 
-    if (!**PANIMATEWORKSPACECHANGE &&
+    if (!g_pAnimateWorkspaceChange->value() &&
         !OnSameWorkspace(PWINDOW, g_pPreviouslyFocusedWindow)) {
       hyprfocus_log(LOG, "Workspace changed, not animating");
       g_pPreviouslyFocusedWindow = PWINDOW;
@@ -164,14 +148,26 @@ APICALL EXPORT std::string PLUGIN_API_VERSION() { return HYPRLAND_API_VERSION; }
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
   PHANDLE = handle;
 
-  HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprfocus:enabled",
-                              Hyprlang::INT{0});
-  HyprlandAPI::addConfigValue(
-      PHANDLE, "plugin:hyprfocus:animate_workspacechange", Hyprlang::INT{1});
-  HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprfocus:animate_floating",
-                              Hyprlang::INT{1});
-  HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprfocus:focus_animation",
-                              Hyprlang::STRING("flash"));
+  g_pEnabled = makeShared<Config::Values::CIntValue>(
+      keepName("plugin:hyprfocus:enabled"), "Enable hyprfocus",
+      (Config::INTEGER)0);
+  HyprlandAPI::addConfigValueV2(PHANDLE, g_pEnabled);
+
+  g_pAnimateWorkspaceChange = makeShared<Config::Values::CIntValue>(
+      keepName("plugin:hyprfocus:animate_workspacechange"),
+      "Animate on workspace change", (Config::INTEGER)1);
+  HyprlandAPI::addConfigValueV2(PHANDLE, g_pAnimateWorkspaceChange);
+
+  g_pAnimateFloating = makeShared<Config::Values::CIntValue>(
+      keepName("plugin:hyprfocus:animate_floating"), "Animate floating windows",
+      (Config::INTEGER)1);
+  HyprlandAPI::addConfigValueV2(PHANDLE, g_pAnimateFloating);
+
+  g_pFocusAnimation = makeShared<Config::Values::CStringValue>(
+      keepName("plugin:hyprfocus:focus_animation"), "Focus animation name",
+      std::string("flash"));
+  HyprlandAPI::addConfigValueV2(PHANDLE, g_pFocusAnimation);
+
   HyprlandAPI::addDispatcherV2(PHANDLE, "animatefocused", &flashCurrentWindow);
 
   g_mAnimations["flash"] = std::make_unique<CFlash>();
@@ -184,8 +180,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
   }
 
   HyprlandAPI::reloadConfig();
-  // g_pConfigManager->tick();
-  g_pAnimationManager->tick();
+  if (g_pAnimationManager)
+    g_pAnimationManager->tick();
   hyprfocus_log(LOG, "Reloaded config");
 
   // Register callbacks using new Event Bus API

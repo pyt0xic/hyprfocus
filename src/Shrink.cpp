@@ -8,19 +8,18 @@
 
 void CShrink::init(HANDLE pHandle, std::string animationName) {
   IFocusAnimation::init(pHandle, "shrink");
-  addConfigValue(pHandle, "shrink_percentage", Hyprlang::FLOAT{0.5f});
+  m_pShrinkPercentage =
+      registerFloat(pHandle, configPrefix() + "shrink_percentage", 0.5f);
 }
 
 void CShrink::setup(HANDLE pHandle, std::string animationName) {
-  // IFocusAnimation::setup(pHandle, animationName);
-  // static const auto *shrinkPercentage =
-  //     (Hyprlang::FLOAT *const *)(getConfigValue(pHandle, "shrink_percentage")
-  //                                    ->getDataStaticPtr());
-  // g_fShrinkPercentage = **shrinkPercentage;
-  // hyprfocus_log(LOG, "Shrink percentage: {}", g_fShrinkPercentage);
+  // No-op: values read at use time via SP<CFloatValue>.
 }
 
 void CShrink::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
+  if (!pWindow || !m_pShrinkPercentage)
+    return;
+
   std::string currentAnimStyle =
       pWindow->m_realSize->getConfig()->internalStyle;
   hyprfocus_log(LOG, "Current animation style: {}", currentAnimStyle);
@@ -35,17 +34,18 @@ void CShrink::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
   pWindow->m_realSize->setConfig(m_sFocusOutAnimConfig);
   pWindow->m_realPosition->setConfig(m_sFocusOutAnimConfig);
 
-  g_pAnimationManager->createAnimation(1.0f, m_sShrinkAnimation, 
-                                     m_sFocusOutAnimConfig, pWindow, AVARDAMAGE_ENTIRE);
+  g_pAnimationManager->createAnimation(1.0f, m_sShrinkAnimation,
+                                       m_sFocusOutAnimConfig, pWindow,
+                                       AVARDAMAGE_ENTIRE);
 
-  static const auto *shrinkPercentage =
-      (Hyprlang::FLOAT *const *)(getConfigValue(pHandle, "shrink_percentage")
-                                     ->getDataStaticPtr());
-  hyprfocus_log(LOG, "Shrink percentage: {}", **shrinkPercentage);
-  m_sShrinkAnimation->setValue(**shrinkPercentage);
+  const float shrinkPercentage = m_pShrinkPercentage->value();
+  hyprfocus_log(LOG, "Shrink percentage: {}", shrinkPercentage);
+  m_sShrinkAnimation->setValue(shrinkPercentage);
 
   m_sShrinkAnimation->setUpdateCallback(
       [this, pWindow](CWeakPointer<CBaseAnimatedVariable> pShrinkAnimation) {
+        if (!pWindow)
+          return;
         const auto GOALPOS = pWindow->m_realPosition->goal();
         const auto GOALSIZE = pWindow->m_realSize->goal();
 
@@ -54,7 +54,7 @@ void CShrink::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
 
         pWindow->m_realSize->setValue(GOALSIZE * PANIMATION->value());
         pWindow->m_realPosition->setValue(GOALPOS + GOALSIZE / 2.f -
-                                           pWindow->m_realSize->value() / 2.f);
+                                          pWindow->m_realSize->value() / 2.f);
       });
 
   m_sShrinkAnimation->setCallbackOnEnd(
