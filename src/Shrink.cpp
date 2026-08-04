@@ -2,8 +2,8 @@
 
 #include "Log.hpp"
 #include <hyprland/src/Compositor.hpp>
+#include <hyprland/src/animation/AnimationManager.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
-#include <hyprland/src/managers/animation/AnimationManager.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
 void CShrink::init(HANDLE pHandle, std::string animationName) {
@@ -20,23 +20,25 @@ void CShrink::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
   if (!pWindow || !m_pShrinkPercentage)
     return;
 
-  std::string currentAnimStyle =
-      pWindow->m_realSize->getConfig()->internalStyle;
+  auto &sizeAnim = pWindow->sizeAnimation();
+  auto &posAnim  = pWindow->positionAnimation();
+
+  std::string currentAnimStyle = sizeAnim->getConfig()->internalStyle;
   hyprfocus_log(LOG, "Current animation style: {}", currentAnimStyle);
   if ((currentAnimStyle == "popout" || currentAnimStyle == "popin") &&
-      pWindow->m_realSize->isBeingAnimated()) {
+      sizeAnim->isBeingAnimated()) {
     hyprfocus_log(LOG, "Shrink: Window is already being animated, skipping");
     return;
   }
 
   IFocusAnimation::onWindowFocus(pWindow, pHandle);
 
-  pWindow->m_realSize->setConfig(m_sFocusOutAnimConfig);
-  pWindow->m_realPosition->setConfig(m_sFocusOutAnimConfig);
+  sizeAnim->setConfig(m_sFocusOutAnimConfig);
+  posAnim->setConfig(m_sFocusOutAnimConfig);
 
-  g_pAnimationManager->createAnimation(1.0f, m_sShrinkAnimation,
-                                       m_sFocusOutAnimConfig, pWindow,
-                                       AVARDAMAGE_ENTIRE);
+  Animation::mgr()->createAnimation(1.0f, m_sShrinkAnimation,
+                                    m_sFocusOutAnimConfig, pWindow,
+                                    AVARDAMAGE_ENTIRE);
 
   const float shrinkPercentage = m_pShrinkPercentage->value();
   hyprfocus_log(LOG, "Shrink percentage: {}", shrinkPercentage);
@@ -46,15 +48,18 @@ void CShrink::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
       [this, pWindow](CWeakPointer<CBaseAnimatedVariable> pShrinkAnimation) {
         if (!pWindow)
           return;
-        const auto GOALPOS = pWindow->m_realPosition->goal();
-        const auto GOALSIZE = pWindow->m_realSize->goal();
+
+        auto &sizeAnim = pWindow->sizeAnimation();
+        auto &posAnim  = pWindow->positionAnimation();
+
+        const auto GOALPOS  = posAnim->goal();
+        const auto GOALSIZE = sizeAnim->goal();
 
         const auto *PANIMATION =
             (CAnimatedVariable<float> *)pShrinkAnimation.get();
 
-        pWindow->m_realSize->setValue(GOALSIZE * PANIMATION->value());
-        pWindow->m_realPosition->setValue(GOALPOS + GOALSIZE / 2.f -
-                                          pWindow->m_realSize->value() / 2.f);
+        sizeAnim->setValue(GOALSIZE * PANIMATION->value());
+        posAnim->setValue(GOALPOS + GOALSIZE / 2.f - sizeAnim->value() / 2.f);
       });
 
   m_sShrinkAnimation->setCallbackOnEnd(

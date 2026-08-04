@@ -6,10 +6,10 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
 #include <hyprland/src/Compositor.hpp>
+#include <hyprland/src/animation/AnimationManager.hpp>
 #include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
-#include <hyprland/src/managers/animation/AnimationManager.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 
@@ -180,8 +180,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
   }
 
   HyprlandAPI::reloadConfig();
-  if (g_pAnimationManager)
-    g_pAnimationManager->tick();
+  if (Animation::mgr())
+    Animation::mgr()->tick();
   hyprfocus_log(LOG, "Reloaded config");
 
   // Register callbacks using new Event Bus API
