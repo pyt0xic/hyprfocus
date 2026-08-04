@@ -17,15 +17,19 @@ void CShrink::setup(HANDLE pHandle, std::string animationName) {
 }
 
 void CShrink::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
-  if (!pWindow || !m_pShrinkPercentage)
+  if (!pWindow || !m_pShrinkPercentage || !m_sFocusOutAnimConfig)
     return;
 
   auto &sizeAnim = pWindow->sizeAnimation();
   auto &posAnim  = pWindow->positionAnimation();
+  if (!sizeAnim || !posAnim)
+    return;
 
-  std::string currentAnimStyle = sizeAnim->getConfig()->internalStyle;
+  // getStyle() safely handles a missing/expired config; never deref getConfig().
+  const std::string currentAnimStyle = sizeAnim->getStyle();
   hyprfocus_log(LOG, "Current animation style: {}", currentAnimStyle);
-  if ((currentAnimStyle == "popout" || currentAnimStyle == "popin") &&
+  if ((currentAnimStyle.starts_with("popin") ||
+       currentAnimStyle.starts_with("popout")) &&
       sizeAnim->isBeingAnimated()) {
     hyprfocus_log(LOG, "Shrink: Window is already being animated, skipping");
     return;
@@ -36,35 +40,49 @@ void CShrink::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
   sizeAnim->setConfig(m_sFocusOutAnimConfig);
   posAnim->setConfig(m_sFocusOutAnimConfig);
 
+  if (!Animation::mgr())
+    return;
+
   Animation::mgr()->createAnimation(1.0f, m_sShrinkAnimation,
                                     m_sFocusOutAnimConfig, pWindow,
                                     AVARDAMAGE_ENTIRE);
+  if (!m_sShrinkAnimation)
+    return;
 
   const float shrinkPercentage = m_pShrinkPercentage->value();
   hyprfocus_log(LOG, "Shrink percentage: {}", shrinkPercentage);
   m_sShrinkAnimation->setValue(shrinkPercentage);
 
+  // Weak window ref so callbacks do not keep a closed window alive.
+  const PHLWINDOWREF windowRef = pWindow;
+
   m_sShrinkAnimation->setUpdateCallback(
-      [this, pWindow](CWeakPointer<CBaseAnimatedVariable> pShrinkAnimation) {
-        if (!pWindow)
+      [windowRef](CWeakPointer<CBaseAnimatedVariable> pShrinkAnimation) {
+        auto pWindow = windowRef.lock();
+        if (!pWindow || !pShrinkAnimation)
           return;
 
         auto &sizeAnim = pWindow->sizeAnimation();
         auto &posAnim  = pWindow->positionAnimation();
+        if (!sizeAnim || !posAnim)
+          return;
+
+        const auto *PANIMATION =
+            dc<CAnimatedVariable<float> *>(pShrinkAnimation.get());
+        if (!PANIMATION)
+          return;
 
         const auto GOALPOS  = posAnim->goal();
         const auto GOALSIZE = sizeAnim->goal();
+        const auto NEWSIZE  = GOALSIZE * PANIMATION->value();
 
-        const auto *PANIMATION =
-            (CAnimatedVariable<float> *)pShrinkAnimation.get();
-
-        sizeAnim->setValue(GOALSIZE * PANIMATION->value());
-        posAnim->setValue(GOALPOS + GOALSIZE / 2.f - sizeAnim->value() / 2.f);
+        sizeAnim->setValue(NEWSIZE);
+        posAnim->setValue(GOALPOS + GOALSIZE / 2.f - NEWSIZE / 2.f);
       });
 
   m_sShrinkAnimation->setCallbackOnEnd(
-      [this, pWindow](CWeakPointer<CBaseAnimatedVariable> pShrinkAnimation) {
-        ((CAnimatedVariable<float> *)(pShrinkAnimation.get()))
-            ->resetAllCallbacks();
+      [](CWeakPointer<CBaseAnimatedVariable> pShrinkAnimation) {
+        if (auto *p = pShrinkAnimation.get())
+          p->resetAllCallbacks();
       });
 }

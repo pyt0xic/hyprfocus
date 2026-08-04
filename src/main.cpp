@@ -22,6 +22,10 @@ bool g_bWorkspaceChanged = false;
 
 std::unordered_map<std::string, std::unique_ptr<IFocusAnimation>> g_mAnimations;
 
+// Keep listeners alive for the plugin lifetime; reset on PLUGIN_EXIT.
+static CHyprSignalListener g_activeWindowListener;
+static CHyprSignalListener g_mouseButtonListener;
+
 // V2 plugin config values. Kept as globals so we can read them at any time.
 static SP<Config::Values::CIntValue>    g_pEnabled;
 static SP<Config::Values::CIntValue>    g_pAnimateWorkspaceChange;
@@ -184,11 +188,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Animation::mgr()->tick();
   hyprfocus_log(LOG, "Reloaded config");
 
-  // Register callbacks using new Event Bus API
-  static auto P1 = Event::bus()->m_events.window.active.listen(onActiveWindowChange);
+  // Register callbacks using new Event Bus API.
+  g_activeWindowListener =
+      Event::bus()->m_events.window.active.listen(onActiveWindowChange);
   hyprfocus_log(LOG, "Registered active window change callback");
 
-  static auto P2 = Event::bus()->m_events.input.mouse.button.listen(onMouseButton);
+  g_mouseButtonListener =
+      Event::bus()->m_events.input.mouse.button.listen(onMouseButton);
   hyprfocus_log(LOG, "Registered mouse button callback");
 
   HyprlandAPI::reloadConfig();
@@ -196,4 +202,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
   return {"hyprfocus", "animate windows on focus", "Vortex", "2.0"};
 }
 
-APICALL EXPORT void PLUGIN_EXIT() {}
+APICALL EXPORT void PLUGIN_EXIT() {
+  g_activeWindowListener.reset();
+  g_mouseButtonListener.reset();
+  g_mAnimations.clear();
+  g_pPreviouslyFocusedWindow.reset();
+  g_pEnabled.reset();
+  g_pAnimateWorkspaceChange.reset();
+  g_pAnimateFloating.reset();
+  g_pFocusAnimation.reset();
+}

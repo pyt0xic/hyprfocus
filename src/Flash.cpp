@@ -18,33 +18,29 @@ void CFlash::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
   hyprfocus_log(LOG, "Flash onWindowFocus start");
   IFocusAnimation::onWindowFocus(pWindow, pHandle);
 
-  if (!pWindow || !m_pFlashOpacity)
+  if (!pWindow || !m_pFlashOpacity || !m_sFocusInAnimConfig ||
+      !m_sFocusOutAnimConfig)
     return;
-
-  const float flashOpacity = m_pFlashOpacity->value();
 
   auto &alphaVar = pWindow->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE);
   if (!alphaVar)
     return;
 
-  *alphaVar = flashOpacity;
-  alphaVar->setConfig(m_sFocusInAnimConfig);
-  alphaVar->setCallbackOnEnd(
-      [this, pWindow](CWeakPointer<CBaseAnimatedVariable> pAnim) {
-        // Read decoration:active_opacity from the host (non-plugin) config.
-        const auto reply =
-            Config::mgr()->getConfigValue("decoration:active_opacity");
-        float activeOpacity = 1.f;
-        if (reply.dataptr) {
-          activeOpacity = **(Config::FLOAT *const *)reply.dataptr;
-        }
+  const float flashOpacity = m_pFlashOpacity->value();
+  const PHLWINDOWREF windowRef = pWindow;
 
-        if (!pWindow)
-          return;
-        auto &alphaVar = pWindow->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE);
-        if (!alphaVar)
-          return;
-        *alphaVar = activeOpacity;
-        alphaVar->setConfig(m_sFocusOutAnimConfig);
-      });
+  // Config must be applied before assigning the goal so the flash uses our
+  // bezier/speed instead of leftover fadeSwitch settings.
+  alphaVar->setConfig(m_sFocusInAnimConfig);
+  *alphaVar = flashOpacity;
+
+  alphaVar->setCallbackOnEnd([windowRef](CWeakPointer<CBaseAnimatedVariable>) {
+    auto pWindow = windowRef.lock();
+    if (!pWindow || !Desktop::View::validMapped(pWindow))
+      return;
+
+    // Restore ACTIVE opacity via Hyprland's own decoration path (rules +
+    // active/inactive/fullscreen opacity), instead of raw config double-deref.
+    pWindow->updateDecorationValues();
+  });
 }
