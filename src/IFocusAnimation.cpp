@@ -2,35 +2,50 @@
 #include "Globals.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
+#include <hyprland/src/config/shared/animation/AnimationTree.hpp>
 #include <hyprlang.hpp>
+
+SP<Config::Values::CFloatValue>
+IFocusAnimation::registerFloat(HANDLE pHandle, const std::string &name,
+                               float def) {
+  m_configNames.emplace_back(name);
+  auto v = makeShared<Config::Values::CFloatValue>(
+      m_configNames.back().c_str(), "hyprfocus plugin value",
+      (Config::FLOAT)def);
+  HyprlandAPI::addConfigValueV2(pHandle, v);
+  return v;
+}
+
+SP<Config::Values::CStringValue>
+IFocusAnimation::registerString(HANDLE pHandle, const std::string &name,
+                                const std::string &def) {
+  m_configNames.emplace_back(name);
+  auto v = makeShared<Config::Values::CStringValue>(
+      m_configNames.back().c_str(), "hyprfocus plugin value", def);
+  HyprlandAPI::addConfigValueV2(pHandle, v);
+  return v;
+}
 
 void IFocusAnimation::init(HANDLE pHandle, std::string animationName) {
   m_szAnimationName = animationName;
   hyprfocus_log(LOG, "Initializing focus animation: {}", animationName);
 
-  HyprlandAPI::addConfigValue(pHandle, configPrefix() + "in_bezier",
-                              Hyprlang::STRING{"default"});
-  HyprlandAPI::addConfigValue(pHandle, configPrefix() + "out_bezier",
-                              Hyprlang::STRING{"default"});
+  m_pInBezier  = registerString(pHandle, configPrefix() + "in_bezier", "default");
+  m_pOutBezier = registerString(pHandle, configPrefix() + "out_bezier", "default");
+  m_pInSpeed   = registerFloat(pHandle, configPrefix() + "in_speed", 1.f);
+  m_pOutSpeed  = registerFloat(pHandle, configPrefix() + "out_speed", 5.f);
 
-  HyprlandAPI::addConfigValue(pHandle, configPrefix() + "in_speed",
-                              Hyprlang::FLOAT{1.f});
-  HyprlandAPI::addConfigValue(pHandle, configPrefix() + "out_speed",
-                              Hyprlang::FLOAT{5.f});
-
-  m_sFocusInAnimConfig =
-      (g_pConfigManager->getAnimationPropertyConfig("global"));
+  m_sFocusInAnimConfig = makeShared<SAnimationPropertyConfig>();
   m_sFocusInAnimConfig->internalEnabled = 1;
   m_sFocusInAnimConfig->internalStyle =
       std::string("hyprfocus_") + animationName + std::string("_in");
   m_sFocusInAnimConfig->pValues = m_sFocusInAnimConfig;
 
-  m_sFocusOutAnimConfig =
-      (g_pConfigManager->getAnimationPropertyConfig("global"));
+  m_sFocusOutAnimConfig = makeShared<SAnimationPropertyConfig>();
   m_sFocusOutAnimConfig->internalEnabled = 1;
   m_sFocusOutAnimConfig->internalStyle =
       std::string("hyprfocus_") + animationName + std::string("_out");
-  m_sFocusOutAnimConfig->pValues = CWeakPointer<SAnimationPropertyConfig>(m_sFocusOutAnimConfig);
+  m_sFocusOutAnimConfig->pValues = m_sFocusOutAnimConfig;
 }
 
 void IFocusAnimation::setup(HANDLE pHandle, std::string animationName) {
@@ -39,43 +54,21 @@ void IFocusAnimation::setup(HANDLE pHandle, std::string animationName) {
 
 void IFocusAnimation::onWindowFocus(PHLWINDOW pWindow, HANDLE pHandle) {
   hyprfocus_log(LOG, "Base callback for animation: {}", m_szAnimationName);
-  static const auto *inBezier =
-      (Hyprlang::STRING const *)(HyprlandAPI::getConfigValue(
-                                     pHandle, configPrefix() + "in_bezier")
-                                     ->getDataStaticPtr());
-  static const auto *inSpeed =
-      (Hyprlang::FLOAT *const *)(HyprlandAPI::getConfigValue(
-                                     pHandle, configPrefix() + "in_speed")
-                                     ->getDataStaticPtr());
-  static const auto *outBezier =
-      (Hyprlang::STRING const *)(HyprlandAPI::getConfigValue(
-                                     pHandle, configPrefix() + "out_bezier")
-                                     ->getDataStaticPtr());
-  static const auto *outSpeed =
-      (Hyprlang::FLOAT *const *)(HyprlandAPI::getConfigValue(
-                                     pHandle, configPrefix() + "out_speed")
-                                     ->getDataStaticPtr());
-  m_sFocusInAnimConfig->internalBezier = *inBezier;
-  m_sFocusInAnimConfig->internalSpeed = **inSpeed;
+  if (!m_pInBezier || !m_pOutBezier || !m_pInSpeed || !m_pOutSpeed) {
+    hyprfocus_log(ERR, "Config values not registered for animation {}",
+                  m_szAnimationName);
+    return;
+  }
 
-  m_sFocusOutAnimConfig->internalBezier = *outBezier;
-  m_sFocusOutAnimConfig->internalSpeed = **outSpeed;
+  m_sFocusInAnimConfig->internalBezier = m_pInBezier->value();
+  m_sFocusInAnimConfig->internalSpeed  = m_pInSpeed->value();
+
+  m_sFocusOutAnimConfig->internalBezier = m_pOutBezier->value();
+  m_sFocusOutAnimConfig->internalSpeed  = m_pOutSpeed->value();
 
   hyprfocus_log(LOG, "In bezier: {} In speed: {} Out bezier: {} Out speed: {}",
                 m_sFocusInAnimConfig->internalBezier,
                 m_sFocusInAnimConfig->internalSpeed,
                 m_sFocusOutAnimConfig->internalBezier,
                 m_sFocusOutAnimConfig->internalSpeed);
-}
-
-void IFocusAnimation::addConfigValue(HANDLE pHandle, std::string name,
-                                     Hyprlang::CConfigValue sValue) {
-  HyprlandAPI::addConfigValue(pHandle, configPrefix() + name, sValue);
-  hyprfocus_log(LOG, "Added config value: {}", configPrefix() + name);
-}
-
-Hyprlang::CConfigValue *IFocusAnimation::getConfigValue(HANDLE pHandle,
-                                                        std::string name) {
-  hyprfocus_log(LOG, "Getting config value: {}", configPrefix() + name);
-  return HyprlandAPI::getConfigValue(pHandle, configPrefix() + name);
 }
